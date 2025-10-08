@@ -1,0 +1,3 @@
+[submodule "submodules/sh1107"]
+	path = submodules/sh1107
+	url = git@github.com:FranciszekJanicki/sh1107.git
