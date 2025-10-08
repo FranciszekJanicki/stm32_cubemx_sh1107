@@ -81,10 +81,6 @@ static sh1107_err_t sh1107_initialize_chip(sh1107_t* sh1107)
     sh1107_gpio_write(sh1107->interface.bus_user, sh1107->config.reset_pin, 1);
     HAL_Delay(100);
 
-    sh1107_gpio_write(sh1107->interface.bus_user,
-                      sh1107->config.control_pin,
-                      0);
-
     uint8_t cmd = (0xAE); // Display OFF
     sh1107_bus_transmit_data(sh1107->interface.bus_user, &cmd, 1);
     cmd = (0xD5); // Set Display Clock Divide Ratio
@@ -107,8 +103,6 @@ static sh1107_err_t sh1107_initialize_chip(sh1107_t* sh1107)
     sh1107_bus_transmit_data(sh1107->interface.bus_user, &cmd, 1);
     cmd = (0xAF); // Display // ON
     sh1107_bus_transmit_data(sh1107->interface.bus_user, &cmd, 1);
-
-    HAL_Delay(100);
 
     return SH1107_ERR_OK;
 }
@@ -139,15 +133,15 @@ int main(void)
     sh1107_t sh1107;
     sh1107_initialize(
         &sh1107,
-        &(sh1107_config_t){.char_width = FONT5X7_CHAR_WIDTH,
-                           .font = font5x7,
+        &(sh1107_config_t){.font_buffer = (uint8_t*)font5x7,
                            .font_chars = FONT5X7_CHARS,
                            .font_height = FONT5X7_HEIGHT,
                            .font_width = FONT5X7_WIDTH,
-                           .line_height = FONT5X7_LINE_HEIGHT,
                            .control_pin = CTRL_Pin,
                            .reset_pin = RST_Pin,
-                           .frame_buffer = &frame_buffer},
+                           .frame_buffer = frame_buffer,
+                           .frame_width = SH1107_SCREEN_WIDTH,
+                           .frame_height = SH1107_SCREEN_HEIGHT},
         &(sh1107_interface_t){.bus_user = &sh1107_user,
                               .bus_initialize = sh1107_bus_initialize,
                               .bus_deinitialize = sh1107_bus_deinitialize,
@@ -157,7 +151,8 @@ int main(void)
                               .gpio_deinitialize = sh1107_gpio_deinitialize,
                               .gpio_write = sh1107_gpio_write});
     sh1107_initialize_chip(&sh1107);
-    memset(frame_buffer, 0xFF, sizeof(frame_buffer));
+    sh1107_draw_string(&sh1107, 0, 0, "DUPA ZBITA");
+    sh1107_draw_string(&sh1107, 30, 30, "DUPA CIPA");
     sh1107_display_frame_buffer(&sh1107);
 
     while (1) {
