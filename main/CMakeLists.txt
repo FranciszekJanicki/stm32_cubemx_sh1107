@@ -5,6 +5,9 @@ target_sources(main PRIVATE
     syscalls.c
     sysmem.c
     font5x7.c
+
+    # main.cpp
+    #sh1107/sh1107.cpp
 )
 
 target_link_libraries(main PRIVATE
