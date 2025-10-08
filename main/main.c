@@ -7,6 +7,7 @@
 #include "stm32f4xx_hal.h"
 #include "usart.h"
 #include <stdio.h>
+#include <string.h>
 
 typedef struct {
     SPI_HandleTypeDef* sh1107_spi_bus;
@@ -24,12 +25,16 @@ static sh1107_err_t sh1107_bus_transmit_data(void* user,
 {
     sh1107_user_t* sh1107_user = (sh1107_user_t*)user;
 
-    return HAL_SPI_Transmit(sh1107_user->sh1107_spi_bus,
-                            data,
-                            data_size,
-                            100) == HAL_OK
-               ? SH1107_ERR_OK
-               : SH1107_ERR_FAIL;
+    HAL_GPIO_WritePin(sh1107_user->sh1107_slave_select_gpio,
+                      sh1107_user->sh1107_slave_select_pin,
+                      GPIO_PIN_RESET);
+    HAL_StatusTypeDef err =
+        HAL_SPI_Transmit(sh1107_user->sh1107_spi_bus, data, data_size, 100);
+    HAL_GPIO_WritePin(sh1107_user->sh1107_slave_select_gpio,
+                      sh1107_user->sh1107_slave_select_pin,
+                      GPIO_PIN_SET);
+
+    return err == HAL_OK ? SH1107_ERR_OK : SH1107_ERR_FAIL;
 }
 
 static sh1107_err_t sh1107_bus_initialize(void* user)
@@ -44,6 +49,12 @@ static sh1107_err_t sh1107_bus_deinitialize(void* user)
 
 static sh1107_err_t sh1107_gpio_initialize(void* user)
 {
+    sh1107_user_t* sh1107_user = (sh1107_user_t*)user;
+
+    HAL_GPIO_WritePin(sh1107_user->sh1107_slave_select_gpio,
+                      sh1107_user->sh1107_slave_select_pin,
+                      GPIO_PIN_RESET);
+
     return SH1107_ERR_OK;
 }
 
@@ -58,11 +69,11 @@ static sh1107_err_t sh1107_gpio_write(void* user, uint32_t pin, bool state)
 
     if (pin == sh1107_user->sh1107_control_pin) {
         HAL_GPIO_WritePin(sh1107_user->sh1107_control_gpio,
-                          pin,
+                          sh1107_user->sh1107_control_pin,
                           (GPIO_PinState)state);
     } else if (pin == sh1107_user->sh1107_reset_pin) {
         HAL_GPIO_WritePin(sh1107_user->sh1107_reset_gpio,
-                          pin,
+                          sh1107_user->sh1107_reset_pin,
                           (GPIO_PinState)state);
     }
 
@@ -71,7 +82,6 @@ static sh1107_err_t sh1107_gpio_write(void* user, uint32_t pin, bool state)
 
 static sh1107_err_t sh1107_initialize_chip(sh1107_t* sh1107)
 {
-    sh1107_device_reset(sh1107);
     HAL_Delay(100);
 
     sh1107_send_set_display_on_off_cmd(sh1107, false);
@@ -83,6 +93,8 @@ static sh1107_err_t sh1107_initialize_chip(sh1107_t* sh1107)
     sh1107_send_set_display_on_off_cmd(sh1107, true);
 
     HAL_Delay(100);
+
+    return SH1107_ERR_OK;
 }
 
 void SystemClock_Config(void);
@@ -96,6 +108,10 @@ int main(void)
     MX_USART2_UART_Init();
     MX_SPI3_Init();
 
+    HAL_Delay(500);
+
+    uint8_t frame_buffer[SH1107_FRAME_BUFFER_SIZE];
+
     sh1107_user_t sh1107_user = {.sh1107_spi_bus = &hspi3,
                                  .sh1107_slave_select_gpio = SS_GPIO_Port,
                                  .sh1107_slave_select_pin = SS_Pin,
@@ -105,34 +121,43 @@ int main(void)
                                  .sh1107_reset_pin = RST_Pin};
 
     sh1107_t sh1107;
-    if (sh1107_initialize(
-            &sh1107,
-            &(sh1107_config_t){.char_width = FONT5X7_CHAR_WIDTH,
-                               .font = font5x7,
-                               .font_chars = FONT5X7_CHARS,
-                               .font_height = FONT5X7_HEIGHT,
-                               .font_width = FONT5X7_WIDTH,
-                               .line_height = FONT5X7_LINE_HEIGHT,
-                               .control_pin = CTRL_Pin,
-                               .reset_pin = RST_Pin},
-            &(sh1107_interface_t){.bus_user = &sh1107_user,
-                                  .bus_initialize = sh1107_bus_initialize,
-                                  .bus_deinitialize = sh1107_bus_deinitialize,
-                                  .bus_transmit = sh1107_bus_transmit_data,
-                                  .gpio_user = &sh1107_user,
-                                  .gpio_initialize = sh1107_gpio_initialize,
-                                  .gpio_deinitialize = sh1107_gpio_deinitialize,
-                                  .gpio_write = sh1107_gpio_write}) !=
-        SH1107_ERR_OK) {
-        printf("Error!\n\r");
+    sh1107_err_t err = sh1107_initialize(
+        &sh1107,
+        &(sh1107_config_t){.char_width = FONT5X7_CHAR_WIDTH,
+                           .font = font5x7,
+                           .font_chars = FONT5X7_CHARS,
+                           .font_height = FONT5X7_HEIGHT,
+                           .font_width = FONT5X7_WIDTH,
+                           .line_height = FONT5X7_LINE_HEIGHT,
+                           .control_pin = CTRL_Pin,
+                           .reset_pin = RST_Pin,
+                           .frame_buffer = &frame_buffer},
+        &(sh1107_interface_t){.bus_user = &sh1107_user,
+                              .bus_initialize = sh1107_bus_initialize,
+                              .bus_deinitialize = sh1107_bus_deinitialize,
+                              .bus_transmit = sh1107_bus_transmit_data,
+                              .gpio_user = &sh1107_user,
+                              .gpio_initialize = sh1107_gpio_initialize,
+                              .gpio_deinitialize = sh1107_gpio_deinitialize,
+                              .gpio_write = sh1107_gpio_write});
+    if (err != SH1107_ERR_OK) {
+        printf("Error: %d\n\r", err);
     }
 
-    if (sh1107_initialize_chip(&sh1107) != SH1107_ERR_OK) {
-        printf("Error!\n\r");
+    err = sh1107_initialize_chip(&sh1107);
+    if (err != SH1107_ERR_OK) {
+        printf("Error: %d\n\r", err);
     }
 
-    sh1107_draw_char(&sh1107, 0, 0, 'D');
-    sh1107_display_frame_buf(&sh1107);
+    err = sh1107_draw_string(&sh1107, 0, 0, "DUPA");
+    if (err != SH1107_ERR_OK) {
+        printf("Error: %d\n\r", err);
+    }
+
+    err = sh1107_display_frame_buffer(&sh1107);
+    if (err != SH1107_ERR_OK) {
+        printf("Error: %d\n\r", err);
+    }
 
     while (1) {
     }
