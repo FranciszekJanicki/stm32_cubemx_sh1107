@@ -9,7 +9,7 @@ target_sources(main PRIVATE
 
 target_link_libraries(main PRIVATE
     sh1107
-    stm32cubemx
+    cubemx
 )
 
 target_compile_options(main PUBLIC
